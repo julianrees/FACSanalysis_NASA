@@ -157,33 +157,18 @@ for (i in seq(ncol(alldata)-1)){
   m_alldata <- rbind(m_alldata, subdata)
 }
 
-m_alldata[5001*4+1,]
-
-length(which(is.na(t_alldata$FL)))
-
 t_alldata <- m_alldata[-which(is.na(m_alldata$FL)),]
 
 log_alldata <- cbind(t_alldata[,-1], FL = log(t_alldata$FL))
-
-
-
-
-
-
-
-
-sublog <- log_alldata[which(log_alldata$Exposure == 'Ti300'),]# &
+sublog <- log_alldata[which(log_alldata$Exposure == 'Fe1000'),]# &
                             #log_alldata$Timepoint == '2h'),]# &
                             # log_alldata$Dose == '0Gy'),]
-
 
 ggplot(sublog, aes(FL, fill = Replicate)) +
   geom_density(alpha = alp, adjust = bw) +
   facet_grid(Dose~Timepoint)
 
-
-
-
+# normalization by set (means of control sets)
 norms <- merge(log_alldata[], ddply(log_alldata[which(log_alldata$Dose == '0Gy'),],
       .(Exposure, Timepoint, Cellline, Antibody, Replicate, Cellcycle), summarize,
       mean = round(mean(FL), 3)))
@@ -191,10 +176,121 @@ norms <- merge(log_alldata[], ddply(log_alldata[which(log_alldata$Dose == '0Gy')
 setnormdata <- cbind(norms[,1:7], FL = norms$FL-norms$mean+1)
 
 
+
+
+
+for (i in seq(length(unique(exposure)))){
+
+  plotdata <- setnormdata[which(setnormdata$Exposure == unique(exposure)[i]),]
+
+  ggplot(plotdata, aes(FL, fill = Replicate)) +
+    geom_density(alpha = alp, adjust = bw) +
+    facet_grid(Dose~Timepoint) +
+    geom_vline(xintercept = 1) +
+    ggtitle(paste(plotdata$Exposure[i],
+                  plotdata$Cellline[i],
+                  plotdata$Antibody[i],
+                  plotdata$Cellcycle[i],
+                  'Norm by set',
+                  sep = ' ')) +
+    ggsave(filename = paste('figures/prelim',
+                            plotdata$Exposure[i],
+                            plotdata$Cellline[i],
+                            plotdata$Antibody[i],
+                            plotdata$Cellcycle[i],
+                            'Norm by set.pdf',
+                            sep = '_'),
+           width = 8.5, height = 5.5, units = "in")
+}
+
+
+
+for (i in seq(length(unique(exposure)))){
+
+  plotdata <- setnormdata2[which(setnormdata2$Exposure == unique(exposure)[i]),]
+
+  ggplot(plotdata, aes(FL, fill = Replicate)) +
+    geom_density(alpha = alp, adjust = bw) +
+    facet_grid(Dose~Timepoint) +
+    geom_vline(xintercept = 1) +
+    ggtitle(paste(plotdata$Exposure[i],
+                  plotdata$Cellline[i],
+                  plotdata$Antibody[i],
+                  plotdata$Cellcycle[i],
+                  'Norm by mean of sets',
+                  sep = ' ')) +
+    ggsave(filename = paste('figures/prelim',
+                            plotdata$Exposure[i],
+                            plotdata$Cellline[i],
+                            plotdata$Antibody[i],
+                            plotdata$Cellcycle[i],
+                            'Norm by mean of set.pdf',
+                            sep = '_'),
+           width = 8.5, height = 5.5, units = "in")
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ggplot(setnormdata[which(setnormdata$Exposure == 'Ti300'),], aes(FL, fill = Replicate)) +
   geom_density(alpha = alp, adjust = bw) +
   facet_grid(Dose~Timepoint) +
-  geom_vline(xintercept = 1)
+  geom_vline(xintercept = 1) +
+  ggtitle(paste(setnormdata$Exposure[1],
+                setnormdata$Cellline[1],
+                setnormdata$Antibody[1],
+                setnormdata$Cellcycle[1],
+                'Norm by set',
+                sep = ' ')) +
+  ggsave(filename = paste('figures/prelim',
+                          setnormdata$Exposure[1],
+                          setnormdata$Cellline[1],
+                          setnormdata$Antibody[1],
+                          setnormdata$Cellcycle[1],
+                          'Norm by set.pdf',
+                          sep = '_'),
+         width = 8.5, height = 5.5, units = "in")
+
+
+
+
+
+
+# normalization by timepoint (mean of means of control sets)
+norms2 <- merge(log_alldata[], ddply(log_alldata[which(log_alldata$Dose == '0Gy'),],
+                                              .(Exposure, Timepoint, Cellline, Antibody, Cellcycle), summarize,
+                                              mean = round(mean(FL), 3)))
+
+
+setnormdata2 <- cbind(norms2[,1:7], FL = norms2$FL-norms2$mean+1)
+
+ggplot(setnormdata2[which(setnormdata2$Exposure == 'Fe1000'),], aes(FL, fill = Replicate)) +
+  geom_density(alpha = alp, adjust = bw) +
+  facet_grid(Dose~Timepoint) +
+  geom_vline(xintercept = 1) +
+  ggtitle(paste(setnormdata2$Exposure[1],
+                setnormdata2$Cellline[1],
+                setnormdata2$Antibody[1],
+                setnormdata2$Cellcycle[1],
+                'Norm by mean of sets',
+                sep = ' '))
+
+
+
+
+
 
 
 
