@@ -206,8 +206,12 @@ for (i in seq(length(unique(exposure)))){
 
 
 for (i in seq(length(unique(exposure)))){
+  for (j in seq(length(unique(cellline)))){
+    for (k in seq(length(unique(antibody)))){
 
-  plotdata <- setnormdata2[which(setnormdata2$Exposure == unique(exposure)[i]),]
+  plotdata <- setnormdata2[which(setnormdata2$Exposure == unique(exposure)[i] &
+                                   setnormdata2$Cellline == unique(cellline)[j] &
+                                 setnormdata2$Antibody == unique(antibody)[k]),]
 
   ggplot(plotdata, aes(FL, fill = Replicate)) +
     geom_density(alpha = alp, adjust = bw) +
@@ -227,6 +231,8 @@ for (i in seq(length(unique(exposure)))){
                             'Norm by mean of set.pdf',
                             sep = '_'),
            width = 8.5, height = 5.5, units = "in")
+    }
+  }
 }
 
 
