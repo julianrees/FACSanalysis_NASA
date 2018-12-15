@@ -113,9 +113,6 @@ exposure <- array(dim = ncol(alldata))
 control <- array(dim = ncol(alldata))
 
 
-colnames(alldata)[1]
-
-
 for (i in seq(ncol(alldata))){
     exposure[i] <- unlist(strsplit(colnames(alldata)[i], split = "_"))[1]
     timepoint[i] <- unlist(strsplit(colnames(alldata)[i], split = "_"))[2]
@@ -126,6 +123,18 @@ for (i in seq(ncol(alldata))){
     cellcycle[i] <- unlist(strsplit(colnames(alldata)[i], split = "_"))[7]
 }
 
+throwouts <- which(exposure == 'X')
+throwouts <- c(throwouts)
+
+exposure <- exposure[-throwouts]
+timepoint <- timepoint[-throwouts]
+cellline <- cellline[-throwouts]
+antibody <- antibody[-throwouts]
+replicate <- replicate[-throwouts]
+dose <- dose[-throwouts]
+cellcycle <- cellcycle[-throwouts]
+
+alldata <- alldata[,-throwouts]
 
 
 
@@ -139,11 +148,26 @@ for (i in 1){
                    Replicate = replicate[i],
                    Dose = dose[i],
                    Cellcycle = cellcycle[i])
+  subdata <-  subdata[-which(is.na(subdata$FL)),]
 }
 
 m_alldata <- subdata
 
+levels(m_alldata$Exposure) <- unique(exposure)
+levels(m_alldata$Timepoint) <- unique(timepoint)
+levels(m_alldata$Cellline) <- unique(cellline)
+levels(m_alldata$Antibody) <- unique(antibody)
+levels(m_alldata$Replicate) <- unique(replicate)
+levels(m_alldata$Dose) <- unique(dose)
+levels(m_alldata$Cellcycle) <- unique(cellcycle)
+
+
+m2_alldata <- list()
+m2_alldata[[1]] <- subdata
+
+
 for (i in seq(ncol(alldata)-1)){
+#for (i in seq(401)-1){
   i = i+1
   subdata <- data.frame(FL = alldata[,i])
   subdata <- cbind(subdata,
@@ -154,19 +178,67 @@ for (i in seq(ncol(alldata)-1)){
                    Replicate = replicate[i],
                    Dose = dose[i],
                    Cellcycle = cellcycle[i])
-  m_alldata <- rbind(m_alldata, subdata)
+  subdata <- subdata[-which(is.na(subdata$FL)),]
+  m2_alldata[[i]] <- subdata
 }
 
-t_alldata <- m_alldata[-which(is.na(m_alldata$FL)),]
+cellcount <- array(dim = length(m2_alldata))
 
-log_alldata <- cbind(t_alldata[,-1], FL = log(t_alldata$FL))
+length(m2_alldata)
+
+m2_alldata[[1300]]
+colnames(alldata)[1300]
+
+ colnames(alldata)
+
+for (i in seq(length(m2_alldata))){
+  cellcount[i] <- nrow(m2_alldata[[i]])
+}
+
+cellcount
+
+addrows <- sum(cellcount) - nrow(m_alldata)
+
+m_alldata <- bind_rows(m_alldata, setNames(data.frame(matrix(nrow = addrows, ncol = ncol(m_alldata))),
+                                           colnames(m_alldata)))
+cellcount
+
+for (i in seq(length(m2_alldata)-1)){
+  start = sum(cellcount[1:i])+1
+  end = start + cellcount[i+1]-1
+  m_alldata[start:end, ] <- m2_alldata[[i+1]]
+}
+
+min(which(is.na(m_alldata$FL)))
+m_alldata[6208478,]
+
+colnames(alldata)[2384]
+alldata[,2385]
+
+which(antibody == 'pATF2' & cellline == '184Fb' & exposure == 'Ti300' & timepoint == '0.5h' &
+        dose == '0.1Gy')
+
+
+
+str(m_alldata)
+str(m2_alldata[[2]])
+
+
+levels(m_alldata$Exposure) <- unique(exposure)
+
+
+
+log_alldata <- cbind(m_alldata[,-1], FL = log(m_alldata$FL))
 sublog <- log_alldata[which(log_alldata$Exposure == 'Fe1000'),]# &
                             #log_alldata$Timepoint == '2h'),]# &
                             # log_alldata$Dose == '0Gy'),]
 
-ggplot(sublog, aes(FL, fill = Replicate)) +
+sd(sublog$FL)
+
+
+ggplot(sublog, aes(FL, fill = Dose)) +
   geom_density(alpha = alp, adjust = bw) +
-  facet_grid(Dose~Timepoint)
+  facet_grid(Antibody~Timepoint)
 
 # normalization by set (means of control sets)
 norms <- merge(log_alldata[], ddply(log_alldata[which(log_alldata$Dose == '0Gy'),],
@@ -205,32 +277,39 @@ for (i in seq(length(unique(exposure)))){
 
 
 
+
+
+
+
 for (i in seq(length(unique(exposure)))){
   for (j in seq(length(unique(cellline)))){
     for (k in seq(length(unique(antibody)))){
 
-  plotdata <- setnormdata2[which(setnormdata2$Exposure == unique(exposure)[i] &
-                                   setnormdata2$Cellline == unique(cellline)[j] &
-                                 setnormdata2$Antibody == unique(antibody)[k]),]
+      plotdata <- setnormdata[which(setnormdata$Exposure == unique(exposure)[i] &
+                                       setnormdata$Cellline == unique(cellline)[j] &
+                                       setnormdata$Antibody == unique(antibody)[k]),]
+      if (nrow(plotdata) > 10){
 
-  ggplot(plotdata, aes(FL, fill = Replicate)) +
-    geom_density(alpha = alp, adjust = bw) +
-    facet_grid(Dose~Timepoint) +
-    geom_vline(xintercept = 1) +
-    ggtitle(paste(plotdata$Exposure[i],
-                  plotdata$Cellline[i],
-                  plotdata$Antibody[i],
-                  plotdata$Cellcycle[i],
-                  'Norm by mean of sets',
-                  sep = ' ')) +
-    ggsave(filename = paste('figures/prelim',
-                            plotdata$Exposure[i],
-                            plotdata$Cellline[i],
-                            plotdata$Antibody[i],
-                            plotdata$Cellcycle[i],
-                            'Norm by mean of set.pdf',
-                            sep = '_'),
-           width = 8.5, height = 5.5, units = "in")
+
+      ggplot(plotdata, aes(FL, fill = Replicate)) +
+        geom_density(alpha = alp, adjust = bw) +
+        facet_grid(Dose~Timepoint) +
+        geom_vline(xintercept = 1) +
+        ggtitle(paste(plotdata$Exposure[i],
+                      plotdata$Cellline[i],
+                      plotdata$Antibody[i],
+                      plotdata$Cellcycle[i],
+                      'Norm by set',
+                      sep = ' ')) +
+        ggsave(filename = paste('figures/prelim',
+                                plotdata$Exposure[i],
+                                plotdata$Cellline[i],
+                                plotdata$Antibody[i],
+                                plotdata$Cellcycle[i],
+                                'Norm by set.pdf',
+                                sep = '_'),
+               width = 8.5, height = 5.5, units = "in")
+      }
     }
   }
 }
@@ -238,6 +317,48 @@ for (i in seq(length(unique(exposure)))){
 
 
 
+
+
+
+
+#
+#
+#
+#
+#
+# for (i in seq(length(unique(exposure)))){
+#   for (j in seq(length(unique(cellline)))){
+#     for (k in seq(length(unique(antibody)))){
+#
+#   plotdata <- setnormdata2[which(setnormdata2$Exposure == unique(exposure)[i] &
+#                                    setnormdata2$Cellline == unique(cellline)[j] &
+#                                  setnormdata2$Antibody == unique(antibody)[k]),]
+#
+#   ggplot(plotdata, aes(FL, fill = Replicate)) +
+#     geom_density(alpha = alp, adjust = bw) +
+#     facet_grid(Dose~Timepoint) +
+#     geom_vline(xintercept = 1) +
+#     ggtitle(paste(plotdata$Exposure[i],
+#                   plotdata$Cellline[i],
+#                   plotdata$Antibody[i],
+#                   plotdata$Cellcycle[i],
+#                   'Norm by mean of sets',
+#                   sep = ' ')) +
+#     ggsave(filename = paste('figures/prelim2',
+#                             plotdata$Exposure[i],
+#                             plotdata$Cellline[i],
+#                             plotdata$Antibody[i],
+#                             plotdata$Cellcycle[i],
+#                             'Norm by mean of set.pdf',
+#                             sep = '_'),
+#            width = 8.5, height = 5.5, units = "in")
+#     }
+#   }
+# }
+#
+#
+#
+#
 
 
 
