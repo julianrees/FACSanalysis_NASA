@@ -178,30 +178,22 @@ for (i in seq(ncol(alldata)-1)){
                    Replicate = replicate[i],
                    Dose = dose[i],
                    Cellcycle = cellcycle[i])
-  subdata <- subdata[-which(is.na(subdata$FL)),]
+  if (length(which(is.na(alldata[,i]))) > 0){
+    subdata <- subdata[-which(is.na(subdata$FL)),]
+  }
   m2_alldata[[i]] <- subdata
 }
 
 cellcount <- array(dim = length(m2_alldata))
 
-length(m2_alldata)
-
-m2_alldata[[1300]]
-colnames(alldata)[1300]
-
- colnames(alldata)
-
 for (i in seq(length(m2_alldata))){
   cellcount[i] <- nrow(m2_alldata[[i]])
 }
-
-cellcount
 
 addrows <- sum(cellcount) - nrow(m_alldata)
 
 m_alldata <- bind_rows(m_alldata, setNames(data.frame(matrix(nrow = addrows, ncol = ncol(m_alldata))),
                                            colnames(m_alldata)))
-cellcount
 
 for (i in seq(length(m2_alldata)-1)){
   start = sum(cellcount[1:i])+1
@@ -209,24 +201,7 @@ for (i in seq(length(m2_alldata)-1)){
   m_alldata[start:end, ] <- m2_alldata[[i+1]]
 }
 
-min(which(is.na(m_alldata$FL)))
-m_alldata[6208478,]
-
-colnames(alldata)[2384]
-alldata[,2385]
-
-which(antibody == 'pATF2' & cellline == '184Fb' & exposure == 'Ti300' & timepoint == '0.5h' &
-        dose == '0.1Gy')
-
-
-
-str(m_alldata)
-str(m2_alldata[[2]])
-
-
 levels(m_alldata$Exposure) <- unique(exposure)
-
-
 
 log_alldata <- cbind(m_alldata[,-1], FL = log(m_alldata$FL))
 sublog <- log_alldata[which(log_alldata$Exposure == 'Fe1000'),]# &
@@ -247,6 +222,22 @@ norms <- merge(log_alldata[], ddply(log_alldata[which(log_alldata$Dose == '0Gy')
 
 setnormdata <- cbind(norms[,1:7], FL = norms$FL-norms$mean+1)
 
+psych::geometric.mean(c(1,3,5,6))
+
+setstats <- ddply(setnormdata, .(Exposure, Timepoint, Cellline, Antibody, Replicate, Cellcycle, Dose), summarize,
+      mean = round(mean(FL), 3),
+      median = round(median(FL), 3),
+      sd = round(sd(FL), 3),
+      gmean = round(psych::geometric.mean(FL), 3))
+
+ggplot(setnormdata[which(setnormdata$Exposure == unique(exposure)[2] &
+                           setnormdata$Cellline == unique(cellline)[1] &
+                           setnormdata$Antibody != "Telo"
+                           ),],
+       aes(x = Dose, y = FL)) +
+  geom_boxplot(aes(fill = Replicate)) +
+  geom_hline(yintercept = 1) +
+  facet_grid(Antibody~Timepoint)
 
 
 
@@ -274,11 +265,6 @@ for (i in seq(length(unique(exposure)))){
                             sep = '_'),
            width = 8.5, height = 5.5, units = "in")
 }
-
-
-
-
-
 
 
 for (i in seq(length(unique(exposure)))){
