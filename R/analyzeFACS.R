@@ -1,5 +1,6 @@
 #---- Header content ----
 ## @knitr header
+library(psych)
 library(ggplot2)
 #library(BiocInstaller)
 #library(ggcyto)
@@ -215,14 +216,13 @@ ggplot(sublog, aes(FL, fill = Dose)) +
   geom_density(alpha = alp, adjust = bw) +
   facet_grid(Antibody~Timepoint)
 
-# normalization by set (means of control sets)
+
+# normalization by set (medians of control sets)
 norms <- merge(log_alldata[], ddply(log_alldata[which(log_alldata$Dose == '0Gy'),],
       .(Exposure, Timepoint, Cellline, Antibody, Replicate, Cellcycle), summarize,
-      mean = round(mean(FL), 3)))
+      median = round(median(FL), 3)))
 
-setnormdata <- cbind(norms[,1:7], FL = norms$FL-norms$mean+1)
-
-psych::geometric.mean(c(1,3,5,6))
+setnormdata <- cbind(norms[,1:7], FL = norms$FL-norms$median+1)
 
 setstats <- ddply(setnormdata, .(Exposure, Timepoint, Cellline, Antibody, Replicate, Cellcycle, Dose), summarize,
       mean = round(mean(FL), 3),
@@ -230,14 +230,46 @@ setstats <- ddply(setnormdata, .(Exposure, Timepoint, Cellline, Antibody, Replic
       sd = round(sd(FL), 3),
       gmean = round(psych::geometric.mean(FL), 3))
 
+
+
+# normalization by Z-score
+norms <- merge(log_alldata[], ddply(log_alldata[which(log_alldata$Dose == '0Gy'),],
+                                    .(Exposure, Timepoint, Cellline, Antibody, Replicate, Cellcycle), summarize,
+                                    mean = round(mean(FL), 3),
+                                    sd = round(sd(FL), 3)))
+
+setnormdata <- cbind(norms[,1:7], FL = (norms$FL-norms$mean)/norms$sd)
+
+setstats <- ddply(setnormdata, .(Exposure, Timepoint, Cellline, Antibody, Replicate, Cellcycle, Dose), summarize,
+                  mean = round(mean(FL), 3),
+                  median = round(median(FL), 3),
+                  sd = round(sd(FL), 3),
+                  gmean = round(psych::geometric.mean(FL), 3))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ggplot(setnormdata[which(setnormdata$Exposure == unique(exposure)[2] &
                            setnormdata$Cellline == unique(cellline)[1] &
-                           setnormdata$Antibody != "Telo"
+                           setnormdata$Timepoint == unique(timepoint)[2] &
+                           setnormdata$Antibody == unique(antibody)[1]
                            ),],
        aes(x = Dose, y = FL)) +
-  geom_boxplot(aes(fill = Replicate)) +
-  geom_hline(yintercept = 1) +
-  facet_grid(Antibody~Timepoint)
+  geom_violin(aes(fill = Replicate)) +
+  geom_hline(yintercept = 1) #+
+  #facet_grid(Antibody~Timepoint)
 
 
 
