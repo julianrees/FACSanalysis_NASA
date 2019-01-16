@@ -457,32 +457,32 @@ ggplot(setnormdata[which(setnormdata$Exposure == 'Ti300'),], aes(FL, fill = Repl
 
 
 
-
-
-# normalization by timepoint (mean of means of control sets)
-norms2 <- merge(log_alldata[], ddply(log_alldata[which(log_alldata$Dose == '0Gy'),],
-                                              .(Exposure, Timepoint, Cellline, Antibody, Cellcycle), summarize,
-                                              mean = round(mean(FL), 3)))
-
-
-setnormdata2 <- cbind(norms2[,1:7], FL = norms2$FL-norms2$mean+1)
-
-ggplot(setnormdata2[which(setnormdata2$Exposure == 'Fe1000'),], aes(FL, fill = Replicate)) +
-  geom_density(alpha = alp, adjust = bw) +
-  facet_grid(Dose~Timepoint) +
-  geom_vline(xintercept = 1) +
-  ggtitle(paste(setnormdata2$Exposure[1],
-                setnormdata2$Cellline[1],
-                setnormdata2$Antibody[1],
-                setnormdata2$Cellcycle[1],
-                'Norm by mean of sets',
-                sep = ' '))
-
-
-
-
-
-
+#
+#
+# # normalization by timepoint (mean of means of control sets)
+# norms2 <- merge(log_alldata[], ddply(log_alldata[which(log_alldata$Dose == '0Gy'),],
+#                                               .(Exposure, Timepoint, Cellline, Antibody, Cellcycle), summarize,
+#                                               mean = round(mean(FL), 3)))
+#
+#
+# setnormdata2 <- cbind(norms2[,1:7], FL = norms2$FL-norms2$mean+1)
+#
+# ggplot(setnormdata2[which(setnormdata2$Exposure == 'Fe1000'),], aes(FL, fill = Replicate)) +
+#   geom_density(alpha = alp, adjust = bw) +
+#   facet_grid(Dose~Timepoint) +
+#   geom_vline(xintercept = 1) +
+#   ggtitle(paste(setnormdata2$Exposure[1],
+#                 setnormdata2$Cellline[1],
+#                 setnormdata2$Antibody[1],
+#                 setnormdata2$Cellcycle[1],
+#                 'Norm by mean of sets',
+#                 sep = ' '))
+#
+#
+#
+#
+#
+#
 
 
 
@@ -492,11 +492,13 @@ stats_data <- setstats[which(setstats$Timepoint == unique(timepoint)[2] &
                                 setstats$Antibody == unique(antibody)[1]),]
 
 
-boxplot(gmean ~ Dose+Cellline+Exposure, data = stats_data)
+boxplot(gmean ~ Dose:Exposure, data = stats_data)
 
 
 fit <- aov(gmean ~ Dose+Exposure, data = stats_data)
+summary(fit)
 
+summary(glht(fit, linfct=mcp(Dose="Tukey", Exposure="Tukey")))
 
 fit <- aov(mean ~ (Dose*Timepoint*Antibody)+(Exposure+Cellline), data = setstats)
 summary(fit)
@@ -507,21 +509,146 @@ summary(glht(fit, linfct=mcp(Dose="Tukey")))
 
 
 
+sig_threshold = 0.05
+sig_results <- array(dim = c(200,6))
+colnames(sig_results) <- c('Timepoint','Antibody','Cellline','Exposure','Dose','P-value')
+
+for (i in seq(length(unique(exposure)))){
+  for (j in seq(length(unique(cellline)))){
+    for (k in seq(length(unique(antibody)))){
+      for (l in seq(length(unique(timepoint))-1)){
+        stats_data <- setstats[which(setstats$Timepoint == unique(timepoint)[l] &
+                                       setstats$Antibody == unique(antibody)[k] &
+                                       setstats$Cellline == unique(cellline)[j] &
+                                       setstats$Exposure == unique(exposure)[i]),]
+        if (nrow(stats_data) > 5){
+          fit <- aov(gmean ~ Dose, data = stats_data)
+          anova_results <- summary(glht(fit, linfct=mcp(Dose="Dunnett")))
+
+          for (n in which(anova_results$test$pvalues < sig_threshold)){
+            m <- min(which(is.na(sig_results)))
+            sig_results[m,1] <- unique(timepoint)[l]
+            sig_results[m,2] <- unique(antibody)[k]
+            sig_results[m,3] <- unique(cellline)[j]
+            sig_results[m,4] <- unique(exposure)[i]
+            sig_results[m,5] <- names(anova_results$test$tstat)[n]
+            sig_results[m,6] <- round(anova_results$test$pvalues[n],4)
+          }
+        }
+      }
+    }
+  }
+}
+
+sig_results <- sig_results[-min(which(is.na(sig_results))):-nrow(sig_results),]
+write.csv(sig_results, file = "sig_tables/Dose.csv")
+
+
+
+
+sig_results <- array(dim = c(200,6))
+colnames(sig_results) <- c('Timepoint','Antibody','Cellline','Exposure','Dose','P-value')
+
+for (i in seq(length(unique(dose)))){
+  for (j in seq(length(unique(cellline)))){
+    for (k in seq(length(unique(antibody)))){
+      for (l in seq(length(unique(timepoint))-1)){
+        stats_data <- setstats[which(setstats$Timepoint == unique(timepoint)[l] &
+                                       setstats$Antibody == unique(antibody)[k] &
+                                       setstats$Cellline == unique(cellline)[j] &
+                                       setstats$Dose == unique(dose)[i]),]
+        if (nrow(stats_data) > 5){
+          fit <- aov(gmean ~ Exposure, data = stats_data)
+          anova_results <- summary(glht(fit, linfct=mcp(Exposure="Dunnett")))
+
+          for (n in which(anova_results$test$pvalues < sig_threshold)){
+            m <- min(which(is.na(sig_results)))
+            sig_results[m,1] <- unique(timepoint)[l]
+            sig_results[m,2] <- unique(antibody)[k]
+            sig_results[m,3] <- unique(cellline)[j]
+            sig_results[m,4] <- names(anova_results$test$tstat)[n]
+            sig_results[m,5] <- unique(dose)[i]
+            sig_results[m,6] <- round(anova_results$test$pvalues[n],4)
+          }
+        }
+      }
+    }
+  }
+}
+
+sig_results <- sig_results[-min(which(is.na(sig_results))):-nrow(sig_results),]
+write.csv(sig_results, file = "sig_tables/Exposure.csv")
+
+
+
+
+sig_results <- array(dim = c(200,6))
+colnames(sig_results) <- c('Timepoint','Antibody','Cellline','Exposure','Dose','P-value')
+
+for (i in seq(length(unique(dose)))){
+  for (j in seq(length(unique(exposure)))){
+    for (k in seq(length(unique(antibody)))){
+      for (l in seq(length(unique(timepoint))-1)){
+        stats_data <- setstats[which(setstats$Timepoint == unique(timepoint)[l] &
+                                       setstats$Antibody == unique(antibody)[k] &
+                                       setstats$Exposure == unique(exposure)[j] &
+                                       setstats$Dose == unique(dose)[i]),]
+        if (nrow(stats_data) > 10){
+          fit <- aov(gmean ~ Cellline, data = stats_data)
+          anova_results <- summary(glht(fit, linfct=mcp(Cellline="Dunnett")))
+
+          for (n in which(anova_results$test$pvalues < sig_threshold)){
+            m <- min(which(is.na(sig_results)))
+            sig_results[m,1] <- unique(timepoint)[l]
+            sig_results[m,2] <- unique(antibody)[k]
+            sig_results[m,3] <- names(anova_results$test$tstat)[n]
+            sig_results[m,4] <- unique(exposure)[j]
+            sig_results[m,5] <- unique(dose)[i]
+            sig_results[m,6] <- round(anova_results$test$pvalues[n],4)
+          }
+        }
+      }
+    }
+  }
+}
+
+sig_results <- sig_results[-min(which(is.na(sig_results))):-nrow(sig_results),]
+write.csv(sig_results, file = "sig_tables/Cellline.csv")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 for (i in seq(length(unique(exposure)))){
   for (j in seq(length(unique(cellline)))){
     for (k in seq(length(unique(antibody)))){
       for (l in seq(length(unique(timepoint)))){
         for (m in seq(length(unique(dose)))){
 
-          if (nrow(plotdata) > 1){
+          if (nrow(setstats) > 2){
           # comparison by dose
           stats_data <- setstats[which(setstats$Timepoint == unique(timepoint)[l] &
                                          setstats$Antibody == unique(antibody)[k] &
                                          setstats$Cellline == unique(cellline)[j] &
                                          setstats$Exposure == unique(exposure)[i]),]
           fit <- aov(gmean ~ Dose, data = stats_data)
-          summary(fit)
-          summary(glht(fit, linfct=mcp(Dose="Dunnett")))
+          # summary(fit)
+          print(c(unique(timepoint)[l],
+                unique(antibody)[k],
+                unique(cellline)[j],
+                unique(exposure)[i]))
+          print(summary(glht(fit, linfct=mcp(Dose="Dunnett"))))
 
           # comparison by exposure
           stats_data <- setstats[which(setstats$Timepoint == unique(timepoint)[l] &
@@ -538,8 +665,10 @@ for (i in seq(length(unique(exposure)))){
                                          setstats$Exposure == unique(exposure)[i] &
                                          setstats$Dose == unique(dose)[m]),]
           fit <- aov(gmean ~ Cellline, data = stats_data)
-          summary(fit)
-          summary(glht(fit, linfct=mcp(Cellline="Tukey")))
+          #summary(fit)
+
+
+          print(summary(glht(fit, linfct=mcp(Cellline="Tukey"))))
 
           }
         }
