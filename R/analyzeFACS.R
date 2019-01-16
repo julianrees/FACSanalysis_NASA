@@ -209,7 +209,6 @@ sublog <- log_alldata[which(log_alldata$Exposure == 'Fe1000'),]# &
                             #log_alldata$Timepoint == '2h'),]# &
                             # log_alldata$Dose == '0Gy'),]
 
-sd(sublog$FL)
 
 
 ggplot(sublog, aes(FL, fill = Dose)) +
@@ -247,56 +246,103 @@ setstats <- ddply(setnormdata, .(Exposure, Timepoint, Cellline, Antibody, Replic
                   gmean = round(psych::geometric.mean(FL), 3))
 
 
+for (i in seq(length(unique(exposure)))){
+  for (j in seq(length(unique(cellline)))){
+
+    plotdata <- setnormdata[which(setnormdata$Exposure == unique(exposure)[i] &
+                                    setnormdata$Cellline == unique(cellline)[j] &
+                                    setnormdata$Antibody != unique(antibody)[4]),]
+    if (nrow(plotdata) > 10){
+
+      ggplot(plotdata, aes(x = Dose, y = FL)) +
+        geom_boxplot(aes(fill = Dose)) +
+        geom_hline(yintercept = 1) +
+        facet_grid(Antibody~Timepoint) +
+        ggtitle(paste(plotdata$Exposure[i],
+                      plotdata$Cellline[i],
+                      plotdata$Antibody[i],
+                      plotdata$Cellcycle[i],
+                      'Norm by median',
+                      sep = ' ')) +
+        ggsave(filename = paste('figures/averaged/boxplots/median_norm/prelim',
+                                plotdata$Exposure[i],
+                                plotdata$Cellline[i],
+                                plotdata$Antibody[i],
+                                plotdata$Cellcycle[i],
+                                'Norm by set median.pdf',
+                                sep = '_'),
+               width = 8.5, height = 5.5, units = "in")
+    }
+
+    plotdata <- setnormdata[which(setnormdata$Exposure == unique(exposure)[i] &
+                                    setnormdata$Cellline == unique(cellline)[j] &
+                                    setnormdata$Antibody == unique(antibody)[4]),]
+    if (nrow(plotdata) > 10){
+
+      ggplot(plotdata, aes(x = Dose, y = FL)) +
+        geom_boxplot(aes(fill = Dose)) +
+        geom_hline(yintercept = 1) +
+        facet_grid(Antibody~Timepoint) +
+        ggtitle(paste(plotdata$Exposure[i],
+                      plotdata$Cellline[i],
+                      plotdata$Antibody[i],
+                      plotdata$Cellcycle[i],
+                      'Norm by Z-score',
+                      sep = ' ')) +
+      ggsave(filename = paste('figures/averaged/boxplots/zscore_norm/prelim',
+                       plotdata$Exposure[i],
+                       plotdata$Cellline[i],
+                       plotdata$Antibody[i],
+                       plotdata$Cellcycle[i],
+                       'Norm by set Z-score.pdf',
+                       sep = '_'),
+      width = 8.5, height = 5.5, units = "in")
+    }
+  }
+}
 
 
 
 
 
-
-
-
-
-
-
-
-
-
-ggplot(setnormdata[which(setnormdata$Exposure == unique(exposure)[2] &
+ggplot(setnormdata[which(setnormdata$Exposure == unique(exposure)[3] &
                            setnormdata$Cellline == unique(cellline)[1] &
-                           setnormdata$Timepoint == unique(timepoint)[2] &
-                           setnormdata$Antibody == unique(antibody)[1]
+                           #setnormdata$Timepoint == unique(timepoint)[2] &
+                           setnormdata$Antibody != unique(antibody)[4]
                            ),],
        aes(x = Dose, y = FL)) +
-  geom_violin(aes(fill = Replicate)) +
-  geom_hline(yintercept = 1) #+
-  #facet_grid(Antibody~Timepoint)
+  geom_boxplot(aes(fill = Replicate, color = Replicate)) +
+  geom_hline(yintercept = 1) +
+  facet_grid(Antibody~Timepoint)
 
 
 
 
-for (i in seq(length(unique(exposure)))){
 
-  plotdata <- setnormdata[which(setnormdata$Exposure == unique(exposure)[i]),]
 
-  ggplot(plotdata, aes(FL, fill = Replicate)) +
-    geom_density(alpha = alp, adjust = bw) +
-    facet_grid(Dose~Timepoint) +
-    geom_vline(xintercept = 1) +
-    ggtitle(paste(plotdata$Exposure[i],
-                  plotdata$Cellline[i],
-                  plotdata$Antibody[i],
-                  plotdata$Cellcycle[i],
-                  'Norm by set',
-                  sep = ' ')) +
-    ggsave(filename = paste('figures/prelim',
-                            plotdata$Exposure[i],
-                            plotdata$Cellline[i],
-                            plotdata$Antibody[i],
-                            plotdata$Cellcycle[i],
-                            'Norm by set.pdf',
-                            sep = '_'),
-           width = 8.5, height = 5.5, units = "in")
-}
+# for (i in seq(length(unique(exposure)))){
+#
+#   plotdata <- setnormdata[which(setnormdata$Exposure == unique(exposure)[i]),]
+#
+#   ggplot(plotdata, aes(FL, fill = Replicate)) +
+#     geom_density(alpha = alp, adjust = bw) +
+#     facet_grid(Dose~Timepoint) +
+#     geom_vline(xintercept = 1) +
+#     ggtitle(paste(plotdata$Exposure[i],
+#                   plotdata$Cellline[i],
+#                   plotdata$Antibody[i],
+#                   plotdata$Cellcycle[i],
+#                   'Norm by set',
+#                   sep = ' ')) +
+#     ggsave(filename = paste('figures/prelim',
+#                             plotdata$Exposure[i],
+#                             plotdata$Cellline[i],
+#                             plotdata$Antibody[i],
+#                             plotdata$Cellcycle[i],
+#                             'Norm by set.pdf',
+#                             sep = '_'),
+#            width = 8.5, height = 5.5, units = "in")
+# }
 
 
 for (i in seq(length(unique(exposure)))){
@@ -317,14 +363,14 @@ for (i in seq(length(unique(exposure)))){
                       plotdata$Cellline[i],
                       plotdata$Antibody[i],
                       plotdata$Cellcycle[i],
-                      'Norm by set',
+                      'Norm by Z-score',
                       sep = ' ')) +
-        ggsave(filename = paste('figures/prelim',
+        ggsave(filename = paste('figures/zscore_norm/prelim',
                                 plotdata$Exposure[i],
                                 plotdata$Cellline[i],
                                 plotdata$Antibody[i],
                                 plotdata$Cellcycle[i],
-                                'Norm by set.pdf',
+                                'Norm by set zscore.pdf',
                                 sep = '_'),
                width = 8.5, height = 5.5, units = "in")
       }
@@ -431,6 +477,152 @@ ggplot(setnormdata2[which(setnormdata2$Exposure == 'Fe1000'),], aes(FL, fill = R
                 setnormdata2$Cellcycle[1],
                 'Norm by mean of sets',
                 sep = ' '))
+
+
+
+
+
+
+
+
+
+
+
+stats_data <- setstats[which(setstats$Timepoint == unique(timepoint)[2] &
+                                setstats$Antibody == unique(antibody)[1]),]
+
+
+boxplot(gmean ~ Dose+Cellline+Exposure, data = stats_data)
+
+
+fit <- aov(gmean ~ Dose+Exposure, data = stats_data)
+
+
+fit <- aov(mean ~ (Dose*Timepoint*Antibody)+(Exposure+Cellline), data = setstats)
+summary(fit)
+
+print(model.tables(fit,"means"),digits=3)
+
+summary(glht(fit, linfct=mcp(Dose="Tukey")))
+
+
+
+for (i in seq(length(unique(exposure)))){
+  for (j in seq(length(unique(cellline)))){
+    for (k in seq(length(unique(antibody)))){
+      for (l in seq(length(unique(timepoint)))){
+        for (m in seq(length(unique(dose)))){
+
+          if (nrow(plotdata) > 1){
+          # comparison by dose
+          stats_data <- setstats[which(setstats$Timepoint == unique(timepoint)[l] &
+                                         setstats$Antibody == unique(antibody)[k] &
+                                         setstats$Cellline == unique(cellline)[j] &
+                                         setstats$Exposure == unique(exposure)[i]),]
+          fit <- aov(gmean ~ Dose, data = stats_data)
+          summary(fit)
+          summary(glht(fit, linfct=mcp(Dose="Dunnett")))
+
+          # comparison by exposure
+          stats_data <- setstats[which(setstats$Timepoint == unique(timepoint)[l] &
+                                         setstats$Antibody == unique(antibody)[k] &
+                                         setstats$Cellline == unique(cellline)[j] &
+                                         setstats$Dose == unique(dose)[m]),]
+          fit <- aov(gmean ~ Exposure, data = stats_data)
+          summary(fit)
+          summary(glht(fit, linfct=mcp(Exposure="Tukey")))
+
+          # comparison by cellline
+          stats_data <- setstats[which(setstats$Timepoint == unique(timepoint)[l] &
+                                         setstats$Antibody == unique(antibody)[k] &
+                                         setstats$Exposure == unique(exposure)[i] &
+                                         setstats$Dose == unique(dose)[m]),]
+          fit <- aov(gmean ~ Cellline, data = stats_data)
+          summary(fit)
+          summary(glht(fit, linfct=mcp(Cellline="Tukey")))
+
+          }
+        }
+      }
+    }
+  }
+}
+
+
+telo_data <- setstats[which((setstats$Timepoint == '24h' &
+                              setstats$Antibody == 'pATF2') |
+                              setstats$Antibody == 'Telo'),]
+
+
+ggplot(telo_data, aes(x = Dose, y = gmean)) +
+  geom_point(aes(color = Antibody)) +
+  facet_grid(Cellline~Exposure)
+
+# RE-LEVEL THE DOSE FACTOR
+
+for (i in seq(length(unique(exposure)))){
+  for (j in seq(length(unique(cellline)))){
+    telo_data <- setstats[which(setstats$Antibody == 'Telo' &
+                                setstats$Exposure == unique(exposure)[i] &
+                                  setstats$Cellline == unique(cellline)[j]),]
+    atf2_data <- setstats[which(setstats$Antibody == 'pATF2' &
+                                  setstats$Timepoint == '24h' &
+                                  setstats$Cellcycle == 'G1' &
+                                  setstats$Exposure == unique(exposure)[i] &
+                                  setstats$Cellline == unique(cellline)[j]),]
+    catf2_data <- ddply(atf2_data, .(Cellline, Antibody, Timepoint, Exposure, Dose), summarize,
+          cormean = mean(gmean))
+
+    ctelo_data <- ddply(telo_data, .(Cellline, Antibody, Timepoint, Exposure, Dose), summarize,
+                        cormean = mean(gmean))
+
+    cor.test(catf2_data$cormean, ctelo_data$cormean)
+
+  }
+}
+
+rbind(ctelo_data, catf2_data)
+
+ggplot(rbind(ctelo_data, catf2_data), aes(x = Dose, y = cormean)) +
+  geom_point(aes(color = Antibody)) +
+  geom_line(aes(color = Antibody, group = Antibody))
+
+
+
+
+
+        a
+
+
+
+
+
+
+
+
+      }
+
+      plotdata <- setnormdata[which(setnormdata$Exposure == unique(exposure)[i] &
+                                      setnormdata$Cellline == unique(cellline)[j] &
+                                      setnormdata$Antibody == unique(antibody)[k]),]
+      if (nrow(plotdata) > 10){
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
