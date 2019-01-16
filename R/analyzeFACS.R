@@ -559,7 +559,7 @@ for (i in seq(length(unique(dose)))){
                                        setstats$Dose == unique(dose)[i]),]
         if (nrow(stats_data) > 5){
           fit <- aov(gmean ~ Exposure, data = stats_data)
-          anova_results <- summary(glht(fit, linfct=mcp(Exposure="Dunnett")))
+          anova_results <- summary(glht(fit, linfct=mcp(Exposure="Tukey")))
 
           for (n in which(anova_results$test$pvalues < sig_threshold)){
             m <- min(which(is.na(sig_results)))
