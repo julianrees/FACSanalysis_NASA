@@ -40,14 +40,17 @@ rdata <- list()
 data_length <- array()
 dataset_name <- list()
 k = 0
+
+pb = txtProgressBar(min = 1, max = length(xlfiles), style = 3)
 for (i in seq(length(xlfiles))){
   for (j in seq(length(excel_sheets(paste('data/', xlfiles[i], sep = ''))))){
     rdata[[j+k]] <- data.frame(read_excel(paste('data/', xlfiles[i], sep = ''), sheet = excel_sheets(paste('data/', xlfiles[i], sep = ''))[j]))
     data_length[j+k] <- nrow(rdata[[j+k]])
   }
   k = k + j
+  setTxtProgressBar(pb, i)
 }
-
+close(pb)
 maxdata <- max(data_length)
 
 i = 1
@@ -67,9 +70,12 @@ for (i in seq(length(rdata))){
 }
 
 alldata <- rdata[[1]]
+pb = txtProgressBar(min = 1, max = length(rdata)-1, style = 3)
 for (i in seq(length(rdata)-1)){
   alldata <- cbind(alldata, rdata[[i]])
+  setTxtProgressBar(pb, i)
 }
+close(pb)
 
 timepoint <- array(dim = ncol(alldata))
 cellline <- array(dim = ncol(alldata))
@@ -210,7 +216,8 @@ setstats <- ddply(setnormdata, .(Exposure, Timepoint, Cellline, Antibody, Replic
                   mean = round(mean(FL), 3),
                   median = round(median(FL), 3),
                   sd = round(sd(FL), 3),
-                  gmean = round(psych::geometric.mean(FL), 3))
+                  gmean = round(psych::geometric.mean(FL), 3),
+                  .progress = "text")
 
 
 for (i in seq(length(unique(exposure)))){
@@ -579,18 +586,6 @@ sig_results <- sig_results[-min(which(is.na(sig_results))):-nrow(sig_results),]
 write.csv(sig_results, file = "sig_tables/Cellline.csv")
 
 
-
-
-
-telo_data <- setstats[which((setstats$Timepoint == '24h' &
-                              setstats$Antibody == 'pATF2') |
-                              setstats$Antibody == 'Telo'),]
-
-
-ggplot(telo_data, aes(x = Dose, y = gmean)) +
-  geom_point(aes(color = Antibody)) +
-  facet_grid(Cellline~Exposure)
-
 # RE-LEVEL THE DOSE FACTOR
 
 telo_data <- setstats[which(setstats$Antibody == 'Telo'),]
@@ -602,14 +597,33 @@ h2ax_data <- setstats[which(setstats$Antibody == 'H2aX' &
                               setstats$Cellcycle == 'G1'),]
 
 
-test <- rbind(telo_data, atf2_data, h2ax_data)
-test$Dose <- fct_relevel(test$Dose, "1Gy", after = 4)
+telo_comp <- rbind(telo_data, atf2_data, h2ax_data)
 
-ggplot(test, aes(x = Dose, y = gmean)) +
-  geom_jitter(aes(color = Antibody), width = 0.1) +
-  facet_grid(Exposure~Cellline)
+telo_comp <- cbind(telo_comp, numDose = as.numeric(telo_comp$Dose))
+telo_comp$numDose <- replace(x = as.numeric(telo_comp$numDose), list = which(telo_comp$numDose == 1), values = 0)
+telo_comp$numDose <- replace(x = as.numeric(telo_comp$numDose), list = which(telo_comp$numDose == 2), values = 0.05)
+telo_comp$numDose <- replace(x = as.numeric(telo_comp$numDose), list = which(telo_comp$numDose == 3), values = 0.5)
+telo_comp$numDose <- replace(x = as.numeric(telo_comp$numDose), list = which(telo_comp$numDose == 4), values = 0.5)
+telo_comp$numDose <- replace(x = as.numeric(telo_comp$numDose), list = which(telo_comp$numDose == 5), values = 2)
+telo_comp$numDose <- replace(x = as.numeric(telo_comp$numDose), list = which(telo_comp$numDose == 6), values = 1)
 
 
+
+telo_comp$Dose <- fct_relevel(telo_comp$Dose, "1Gy", after = 4)
+telo_comp
+
+
+
+ggplot(telo_comp, aes(x = numDose, y = gmean)) +
+  geom_jitter(aes(color = Antibody), width = 0.05) +
+  facet_grid(Exposure~Cellline) +
+  geom_line(data = ddply(telo_comp, .(Cellline, Timepoint, Antibody, Exposure, numDose),
+                         summarize, mean = mean(gmean)),
+            aes(y = mean, color = Antibody))
+
+ddply(telo_comp, .(Cellline, Timepoint, Antibody, Exposure, numDose),
+      summarize, mean = mean(gmean),
+      .progress = "text")
 
 
 
@@ -634,22 +648,72 @@ for (i in seq(length(unique(exposure)))){
   }
 }
 
-rbind(ctelo_data, catf2_data)
-
-ggplot(rbind(ctelo_data, catf2_data), aes(x = Dose, y = cormean)) +
-  geom_point(aes(color = Antibody)) +
-  geom_line(aes(color = Antibody, group = Antibody))
 
 
+telo <- setnormdata[which(setnormdata$Antibody == 'Telo'),]
 
+ggplot(telo, aes(x = FL, fill = Dose)) +
+  geom_density(alpha = alp, adjust = bw) +
+  facet_grid(Exposure~Cellline)
 
-
-
-
-
+ggplot(telo, aes(x = FL)) +
+  stat_ecdf(aes(color = Dose)) +
+  facet_grid(Exposure~Cellline)
 
 
 
+telo_full_ref <- dplyr::filter(telo, Dose == '0Gy')
+telo_full_ks <- ddply(telo, .(Exposure, Dose, Cellline), summarize,
+                      ks = ks.test(FL, 'pnorm')$statistic,
+                      ks2 = ks.test(FL, telo_full_ref$FL[which(telo_full_ref$Cellline == Cellline)])$statistic,
+                      .progress = 'text')
+
+ggplot(telo_full_ks, aes(x = Dose, y = ks2)) +
+  geom_col(aes(fill = Cellline, group = Cellline), position = 'dodge') +
+  facet_grid(~Exposure)
+
+
+telo <- ddply(telo, .(Exposure, Dose, Cellline), mutate,
+                          lquart = quantile(FL)[2],
+                          .progress = 'text')
+
+telo <- ddply(telo, .(Exposure, Dose, Cellline), mutate,
+                          hquart = quantile(FL)[3],
+                          .progress = 'text')
+
+telo_low <- telo[which(telo$FL < telo$lquart),]
+telo_high <- telo[which(telo$FL > telo$hquart),]
+
+ggplot(telo_low, aes(x = FL, fill = Dose)) +
+  geom_density(alpha = alp, adjust = bw) +
+  facet_grid(Exposure~Cellline) +
+  geom_vline(aes(xintercept = lquart, color = Dose))
+
+ggplot(telo_high, aes(x = FL, fill = Dose)) +
+  geom_density(alpha = alp, adjust = bw) +
+  facet_grid(Exposure~Cellline) +
+  geom_vline(aes(xintercept = hquart, color = Dose))
+
+
+telo_low_ref <- dplyr::filter(telo_low, Dose == '0Gy')
+telo_high_ref <- dplyr::filter(telo_high, Dose == '0Gy')
+
+
+telo_low_ks <- ddply(telo_low, .(Exposure, Dose, Cellline), summarize,
+                     ks2 = ks.test(FL, telo_low_ref$FL[which(telo_low_ref$Cellline == Cellline)])$statistic,
+                     .progress = 'text')
+
+ggplot(telo_low_ks, aes(x = Dose, y = ks)) +
+  geom_col(aes(fill = Cellline, group = Cellline), position = 'dodge') +
+  facet_grid(~Exposure)
+
+telo_high_ks <- ddply(telo_high, .(Exposure, Dose, Cellline), summarize,
+                      ks2 = ks.test(FL, telo_high_ref$FL[which(telo_high_ref$Cellline == Cellline)])$statistic,
+                      .progress = 'text')
+
+ggplot(telo_high_ks, aes(x = Dose, y = ks2)) +
+  geom_col(aes(fill = Cellline, group = Cellline), position = 'dodge') +
+  facet_grid(~Exposure)
 
 
 
