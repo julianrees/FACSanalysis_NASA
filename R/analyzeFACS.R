@@ -62,11 +62,12 @@ rdata[[i]] <- rbind(rdata[[i]], temp)
 
 rdata[[i]] <- rbind(rdata[[i]], matrix(nrow = (maxdata - nrow(rdata[[i]])), ncol = ncol(rdata[[i]])))
 
-
+pb = txtProgressBar(min = 1, max = length(rdata), style = 3)
 for (i in seq(length(rdata))){
   temp <- data.frame(matrix(nrow = maxdata-nrow(rdata[[i]]), ncol = ncol(rdata[[i]])))
   colnames(temp) <- colnames(rdata[[i]])
   rdata[[i]] <- rbind(rdata[[i]], temp)
+  setTxtProgressBar(pb, i)
 }
 
 alldata <- rdata[[1]]
@@ -111,7 +112,6 @@ cellcycle <- cellcycle[-throwouts]
 alldata <- alldata[,-throwouts]
 
 
-
 for (i in 1){
   subdata <- data.frame(FL = alldata[,i])
   subdata <- cbind(subdata,
@@ -139,7 +139,7 @@ levels(m_alldata$Cellcycle) <- unique(cellcycle)
 m2_alldata <- list()
 m2_alldata[[1]] <- subdata
 
-
+pb = txtProgressBar(min = 1, max = ncol(alldata)-1, style = 3)
 for (i in seq(ncol(alldata)-1)){
 #for (i in seq(401)-1){
   i = i+1
@@ -156,6 +156,7 @@ for (i in seq(ncol(alldata)-1)){
     subdata <- subdata[-which(is.na(subdata$FL)),]
   }
   m2_alldata[[i]] <- subdata
+  setTxtProgressBar(pb, i)
 }
 
 cellcount <- array(dim = length(m2_alldata))
@@ -169,10 +170,12 @@ addrows <- sum(cellcount) - nrow(m_alldata)
 m_alldata <- bind_rows(m_alldata, setNames(data.frame(matrix(nrow = addrows, ncol = ncol(m_alldata))),
                                            colnames(m_alldata)))
 
+pb = txtProgressBar(min = 1, max = ncol(alldata)-1, style = 3)
 for (i in seq(length(m2_alldata)-1)){
   start = sum(cellcount[1:i])+1
   end = start + cellcount[i+1]-1
   m_alldata[start:end, ] <- m2_alldata[[i+1]]
+  setTxtProgressBar(pb, i)
 }
 
 levels(m_alldata$Exposure) <- unique(exposure)
@@ -190,7 +193,10 @@ ggplot(sublog, aes(FL, fill = Dose)) +
 
 
 # normalization by set (medians of control sets)
-norms <- merge(log_alldata[], ddply(log_alldata[which(log_alldata$Dose == '0Gy'),],
+log_G1data <- dplyr::filter(log_alldata, Cellcycle == 'G1')
+log_G1data <- dplyr::filter(log_G1data, Timepoint != '4h')
+
+norms <- merge(log_G1data[], ddply(log_G1data[which(log_G1data$Dose == '0Gy'),],
       .(Exposure, Timepoint, Cellline, Antibody, Replicate, Cellcycle), summarize,
       median = round(median(FL), 3)))
 
@@ -204,34 +210,32 @@ setstats <- ddply(setnormdata, .(Exposure, Timepoint, Cellline, Antibody, Replic
 
 
 
-# normalization by mean of medians for G1
-log_G1data <- dplyr::filter(log_alldata, Cellcycle == 'G1')
-log_G1data <- dplyr::filter(log_G1data, Timepoint != '4h')
-
-means <- ddply(log_alldata[which(log_G1data$Dose == '0Gy'),],
-                     .(Exposure, Timepoint, Cellline, Antibody, Replicate), summarize,
-                     mean = round(mean(FL), 3),
-                     median = median(FL),
-                     sd = round(sd(FL), 3),
-                     .progress = 'text')
-
-norms <- merge(log_G1data[], ddply(means, .(Exposure, Timepoint, Cellline, Antibody), summarize,
-                                    mean = mean(median),
-                                    sd = mean(sd),
-                                   .progress = 'text'))
-
-
-setnormdata <- cbind(norms[,1:7], FL = (norms$FL-norms$mean)+1)
-
-setstats <- ddply(setnormdata, .(Exposure, Timepoint, Cellline, Antibody, Replicate, Cellcycle, Dose), summarize,
-                  mean = round(mean(FL), 3),
-                  median = round(median(FL), 3),
-                  sd = round(sd(FL), 3),
-                  gmean = round(psych::geometric.mean(FL), 3),
-                  .progress = "text")
-
-
-
+# # normalization by mean of medians for G1
+#
+#
+# means <- ddply(log_alldata[which(log_G1data$Dose == '0Gy'),],
+#                      .(Exposure, Timepoint, Cellline, Antibody, Replicate), summarize,
+#                      mean = round(mean(FL), 3),
+#                      median = median(FL),
+#                      sd = round(sd(FL), 3),
+#                      .progress = 'text')
+#
+# norms <- merge(log_G1data[], ddply(means, .(Exposure, Timepoint, Cellline, Antibody), summarize,
+#                                     mean = mean(median),
+#                                     sd = mean(sd),
+#                                    .progress = 'text'))
+#
+#
+# setnormdata <- cbind(norms[,1:7], FL = (norms$FL-norms$mean)+1)
+#
+# setstats <- ddply(setnormdata, .(Exposure, Timepoint, Cellline, Antibody, Replicate, Cellcycle, Dose), summarize,
+#                   mean = round(mean(FL), 3),
+#                   median = round(median(FL), 3),
+#                   sd = round(sd(FL), 3),
+#                   gmean = round(psych::geometric.mean(FL), 3),
+#                   .progress = "text")
+#
+pb = txtProgressBar(min = 1, max = length(unique(exposure))*length(unique(cellline)), style = 3)
 for (i in seq(length(unique(exposure)))){
   for (j in seq(length(unique(cellline)))){
 
@@ -258,14 +262,9 @@ for (i in seq(length(unique(exposure)))){
                                 'Norm by set median.pdf',
                                 sep = '_'),
                width = 8.5, height = 5.5, units = "in")
-    }
 
-    plotdata <- setnormdata[which(setnormdata$Exposure == unique(exposure)[i] &
-                                    setnormdata$Cellline == unique(cellline)[j] &
-                                    setnormdata$Antibody == unique(antibody)[4]),]
-    if (nrow(plotdata) > 10){
 
-      ggplot(plotdata, aes(x = Dose, y = FL)) +
+      ggplot(plotdata, aes(x = Dose, y = FL, by = Replicate)) +
         geom_boxplot(aes(fill = Dose)) +
         geom_hline(yintercept = 1) +
         facet_grid(Antibody~Timepoint) +
@@ -273,17 +272,49 @@ for (i in seq(length(unique(exposure)))){
                       plotdata$Cellline[i],
                       plotdata$Antibody[i],
                       plotdata$Cellcycle[i],
-                      'Norm by Z-score',
+                      'Norm by median',
                       sep = ' ')) +
-      ggsave(filename = paste('figures/averaged/boxplots/zscore_norm/prelim',
-                       plotdata$Exposure[i],
-                       plotdata$Cellline[i],
-                       plotdata$Antibody[i],
-                       plotdata$Cellcycle[i],
-                       'Norm by set Z-score.pdf',
-                       sep = '_'),
-      width = 8.5, height = 5.5, units = "in")
+        ggsave(filename = paste('figures/by_set/boxplots/median_norm/prelim',
+                                plotdata$Exposure[i],
+                                plotdata$Cellline[i],
+                                plotdata$Antibody[i],
+                                plotdata$Cellcycle[i],
+                                'Norm by set median.pdf',
+                                sep = '_'),
+               width = 8.5, height = 5.5, units = "in")
+
     }
+    setTxtProgressBar(pb, i*j)
+
+
+
+
+
+
+    # plotdata <- setnormdata[which(setnormdata$Exposure == unique(exposure)[i] &
+    #                                 setnormdata$Cellline == unique(cellline)[j] &
+    #                                 setnormdata$Antibody == unique(antibody)[4]),]
+    # if (nrow(plotdata) > 10){
+    #
+    #   ggplot(plotdata, aes(x = Dose, y = FL)) +
+    #     geom_boxplot(aes(fill = Dose)) +
+    #     geom_hline(yintercept = 1) +
+    #     facet_grid(Antibody~Timepoint) +
+    #     ggtitle(paste(plotdata$Exposure[i],
+    #                   plotdata$Cellline[i],
+    #                   plotdata$Antibody[i],
+    #                   plotdata$Cellcycle[i],
+    #                   'Norm by Z-score',
+    #                   sep = ' ')) +
+    #   ggsave(filename = paste('figures/averaged/boxplots/zscore_norm/prelim',
+    #                    plotdata$Exposure[i],
+    #                    plotdata$Cellline[i],
+    #                    plotdata$Antibody[i],
+    #                    plotdata$Cellcycle[i],
+    #                    'Norm by set Z-score.pdf',
+    #                    sep = '_'),
+    #   width = 8.5, height = 5.5, units = "in")
+    # }
   }
 }
 
