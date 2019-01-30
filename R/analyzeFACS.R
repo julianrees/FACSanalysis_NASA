@@ -15,6 +15,9 @@ library(dplyr)
 library(multcomp)
 library(plotly)
 library(forcats)
+library(Matching)
+library(fBasics)
+library(coin)
 
 
 # plotting preferences
@@ -36,7 +39,7 @@ se <- function(x) sqrt(var(x)/length(x))
 
 setwd('./')
 
-#---- Data import from the listed folders ----
+#---- Data import and cleaning from the listed folders ----
 xlfiles <- dir("data/")
 xlsheets <- array()
 rdata <- list()
@@ -195,7 +198,8 @@ ggplot(sublog, aes(FL, fill = Dose)) +
   facet_grid(Antibody~Timepoint)
 
 
-# normalization by set (medians of control sets)
+#---- Data normalization ----
+# normalized by set using medians, select only the G1 cell cycle and throw out the 4h timepoint
 log_G1data <- dplyr::filter(log_alldata, Cellcycle == 'G1')
 log_G1data <- dplyr::filter(log_G1data, Timepoint != '4h')
 
@@ -205,16 +209,22 @@ norms <- merge(log_G1data[], ddply(log_G1data[which(log_G1data$Dose == '0Gy'),],
 
 setnormdata <- cbind(norms[,1:7], FL = norms$FL-norms$median+1)
 
+# relevel the exposure factor
+setnormdata$Exposure <- factor(setnormdata$Exposure,
+                            levels = levels(setnormdata$Exposure)[c(1,6,2,4,5,3)])
+
 setstats <- ddply(setnormdata, .(Exposure, Timepoint, Cellline, Antibody, Replicate, Dose), summarize,
       mean = mean(FL),
       median = median(FL),
-      sd = sd(FL))
+      sd = sd(FL),
+      se = se(FL),
+      cellcount = length(FL),
+      .progress = 'text')
 
-setstats$Exposure <- factor(setstats$Exposure,
-                              levels = levels(setstats$Exposure)[c(1,6,2,4,5,3)])
 
-#
-#pb = txtProgressBar(min = 1, max = length(unique(exposure))*length(unique(cellline)), style = 3)
+
+
+#---- Plots of normalized data ----
 for (i in seq(length(unique(exposure)))){
   for (j in seq(length(unique(cellline)))){
 
@@ -223,6 +233,7 @@ for (i in seq(length(unique(exposure)))){
                                     setnormdata$Antibody != unique(antibody)[4]),]
     if (nrow(plotdata) > 10){
 
+      # make the plots of averaged data
       ggplot(plotdata, aes(x = Dose, y = FL)) +
         geom_boxplot(aes(fill = Dose)) +
         geom_hline(yintercept = 1) +
@@ -242,7 +253,7 @@ for (i in seq(length(unique(exposure)))){
                                 sep = '_'),
                width = 8.5, height = 5.5, units = "in")
 
-
+      # make the plots showing individual sets
       ggplot(plotdata, aes(x = Dose, y = FL, by = Replicate)) +
         geom_boxplot(aes(fill = Dose)) +
         geom_hline(yintercept = 1) +
@@ -263,215 +274,128 @@ for (i in seq(length(unique(exposure)))){
                width = 8.5, height = 5.5, units = "in")
 
     }
-    #setTxtProgressBar(pb, i*j)
   }
 }
 
 
+#---- Generate custom data frames ----
+# summary of all data (merge runs / replicates)
+summary_stats <- ddply(setstats, .(Exposure, Dose, Timepoint, Antibody, Cellline),
+                       summarize,
+                       mean = mean(mean),
+                       sd = sd(median),
+                       se = se(median),
+                       median = mean(median))
+
+# telomere data
+telo_data <- dplyr::filter(setnormdata, Antibody == 'Telo')
+
+# telomere run stats
+telo_stats <- dplyr::filter(setstats, Antibody == 'Telo')
+
+telo_summary <- ddply(telo_stats, .(Exposure, Dose, Timepoint, Antibody, Cellline), summarize,
+                      mean = mean(mean),
+                      sd = sd(median),
+                      se = se(median),
+                      median = mean(median))
+
+# numerical telo + 24h phospho data for correlation
+telo_phos_corr <- dplyr::filter(summary_stats, Timepoint == '24h' |
+                                  Timepoint == '2wks')
+
+telo_phos_corr <- cbind(telo_phos_corr, numDose = as.numeric(telo_phos_corr$Dose))
+telo_phos_corr$numDose <- replace(x = as.numeric(telo_phos_corr$numDose),
+                                  list = which(telo_phos_corr$numDose == 1), values = 0)
+telo_phos_corr$numDose <- replace(x = as.numeric(telo_phos_corr$numDose),
+                                  list = which(telo_phos_corr$numDose == 2), values = 0.05)
+telo_phos_corr$numDose <- replace(x = as.numeric(telo_phos_corr$numDose),
+                                  list = which(telo_phos_corr$numDose == 3), values = 0.1)
+telo_phos_corr$numDose <- replace(x = as.numeric(telo_phos_corr$numDose),
+                                  list = which(telo_phos_corr$numDose == 4), values = 0.5)
+telo_phos_corr$numDose <- replace(x = as.numeric(telo_phos_corr$numDose),
+                                  list = which(telo_phos_corr$numDose == 5), values = 2)
+telo_phos_corr$numDose <- replace(x = as.numeric(telo_phos_corr$numDose),
+                                  list = which(telo_phos_corr$numDose == 6), values = 1)
+
+
+# difference data between celllines
+diffcheck <- function(vec) {
+  ifelse(length(vec) == 2, diff(vec), 0)
+}
+cell_diffs <- ddply(dplyr::filter(summary_stats, Timepoint != '2wks' &
+                                    Dose != '0Gy'),
+                    .(Exposure, Antibody, Dose, Timepoint), summarize,
+                    diffs = diffcheck(median)*-1)
 
 
 
-ggplot(setnormdata[which(setnormdata$Exposure == unique(exposure)[2] &
-                           setnormdata$Cellline == unique(cellline)[1] &
-                           #setnormdata$Timepoint == unique(timepoint)[2] &
-                           setnormdata$Antibody != unique(antibody)[4]
-                           ),],
-       aes(x = Dose, y = FL)) +
-  geom_boxplot(aes(fill = Replicate, color = Replicate)) +
+#---- Figures for manuscript ----
+
+# make the correlation figure
+fits <- dlply(telo_phos_corr, .(Antibody, Cellline, Exposure), lm, formula = median ~ numDose)
+coefs <- ldply(fits, coef)
+colnames(coefs) <- c(colnames(coefs)[1:3], 'Intercept', 'Slope')
+
+summary(fits[[1]])
+
+
+ggplot(telo_phos_corr, aes(x = numDose,
+                           ymin = median - se,
+                           ymax = median + se)) +
+  geom_errorbar(aes(color = Antibody)) +
+  geom_point(aes(color = Antibody, y = median)) +
+  geom_abline(data = coefs, aes(slope = Slope, intercept = Intercept, color = Antibody)) +
+  facet_grid(Exposure~Cellline)
+
+
+# Telo violin plot
+ggplot(setnormdata[which(setnormdata$Antibody == 'Telo'),],
+       aes(y = FL, x = Dose)) +
+  geom_violin(aes(fill = Dose)) +
+  facet_grid(Cellline~Exposure) +
   geom_hline(yintercept = 1) +
-  facet_grid(Antibody~Timepoint)
+  ggtitle('Telo data by cell line + exposure')
 
 
+# telo data in column format
+pos <- position_dodge(width = 0.9)
+ggplot(telo_summary[which(telo_summary$Dose != '0Gy'),], aes(x = Exposure,
+                                                             ymin = median - se,
+                                                             ymax = median + se,
+                                                             group = Dose,
+                                                             fill = Dose)) +
+  geom_col(aes(y = median, fill = Dose), color = 'black', position = pos) +
+  geom_errorbar(position = pos) +
+  facet_grid(~Cellline) +
+  geom_hline(yintercept = 1)
 
 
+# phospho data in column graph differences btwn cellline
+pos <- position_dodge(width = 0.8)
+ggplot(cell_diffs, aes(x = Exposure, y = diffs)) +
+  geom_col(aes(fill = Antibody), position = pos) +
+  facet_grid(Timepoint ~ Dose) +
+  geom_hline(yintercept = 0)
 
-# for (i in seq(length(unique(exposure)))){
-#
-#   plotdata <- setnormdata[which(setnormdata$Exposure == unique(exposure)[i]),]
-#
-#   ggplot(plotdata, aes(FL, fill = Replicate)) +
-#     geom_density(alpha = alp, adjust = bw) +
-#     facet_grid(Dose~Timepoint) +
-#     geom_vline(xintercept = 1) +
-#     ggtitle(paste(plotdata$Exposure[i],
-#                   plotdata$Cellline[i],
-#                   plotdata$Antibody[i],
-#                   plotdata$Cellcycle[i],
-#                   'Norm by set',
-#                   sep = ' ')) +
-#     ggsave(filename = paste('figures/prelim',
-#                             plotdata$Exposure[i],
-#                             plotdata$Cellline[i],
-#                             plotdata$Antibody[i],
-#                             plotdata$Cellcycle[i],
-#                             'Norm by set.pdf',
-#                             sep = '_'),
-#            width = 8.5, height = 5.5, units = "in")
-# }
+ggplot(cell_diffs, aes(x = Dose, y = diffs)) +
+  geom_col(aes(fill = Antibody), position = pos) +
+  facet_grid(Timepoint ~ Exposure) +
+  geom_hline(yintercept = 0)
 
 
-for (i in seq(length(unique(exposure)))){
-  for (j in seq(length(unique(cellline)))){
-    for (k in seq(length(unique(antibody)))){
-
-      plotdata <- setnormdata[which(setnormdata$Exposure == unique(exposure)[i] &
-                                       setnormdata$Cellline == unique(cellline)[j] &
-                                       setnormdata$Antibody == unique(antibody)[k]),]
-      if (nrow(plotdata) > 10){
-
-
-      ggplot(plotdata, aes(FL, fill = Replicate)) +
-        geom_density(alpha = alp, adjust = bw) +
-        facet_grid(Dose~Timepoint) +
-        geom_vline(xintercept = 1) +
-        ggtitle(paste(plotdata$Exposure[i],
-                      plotdata$Cellline[i],
-                      plotdata$Antibody[i],
-                      plotdata$Cellcycle[i],
-                      'Norm by Z-score',
-                      sep = ' ')) +
-        ggsave(filename = paste('figures/zscore_norm/prelim',
-                                plotdata$Exposure[i],
-                                plotdata$Cellline[i],
-                                plotdata$Antibody[i],
-                                plotdata$Cellcycle[i],
-                                'Norm by set zscore.pdf',
-                                sep = '_'),
-               width = 8.5, height = 5.5, units = "in")
-      }
-    }
-  }
+for (i in unique(cell_diffs$Antibody)){
+  ggplot(dplyr::filter(cell_diffs, Antibody == i), aes(x = Exposure, y = diffs)) +
+    geom_col(aes(fill = Exposure), position = pos) +
+    facet_grid(Timepoint ~ Dose) +
+    geom_hline(yintercept = 0)# +
+    ggsave(filename = paste('figures/190125/Differences_', i,'.pdf'),
+           width = 8.5, height = 5.5, units = "in")
 }
 
 
+#---- Statistics analysis section ----
 
-
-
-
-
-
-#
-#
-#
-#
-#
-# for (i in seq(length(unique(exposure)))){
-#   for (j in seq(length(unique(cellline)))){
-#     for (k in seq(length(unique(antibody)))){
-#
-#   plotdata <- setnormdata2[which(setnormdata2$Exposure == unique(exposure)[i] &
-#                                    setnormdata2$Cellline == unique(cellline)[j] &
-#                                  setnormdata2$Antibody == unique(antibody)[k]),]
-#
-#   ggplot(plotdata, aes(FL, fill = Replicate)) +
-#     geom_density(alpha = alp, adjust = bw) +
-#     facet_grid(Dose~Timepoint) +
-#     geom_vline(xintercept = 1) +
-#     ggtitle(paste(plotdata$Exposure[i],
-#                   plotdata$Cellline[i],
-#                   plotdata$Antibody[i],
-#                   plotdata$Cellcycle[i],
-#                   'Norm by mean of sets',
-#                   sep = ' ')) +
-#     ggsave(filename = paste('figures/prelim2',
-#                             plotdata$Exposure[i],
-#                             plotdata$Cellline[i],
-#                             plotdata$Antibody[i],
-#                             plotdata$Cellcycle[i],
-#                             'Norm by mean of set.pdf',
-#                             sep = '_'),
-#            width = 8.5, height = 5.5, units = "in")
-#     }
-#   }
-# }
-#
-#
-#
-#
-
-
-
-
-
-
-
-
-
-
-
-
-ggplot(setnormdata[which(setnormdata$Exposure == 'Ti300' &
-                           setnormdata$Antibody == 'H2aX' &
-                           setnormdata$Cellline == '184D'),], aes(FL, fill = Replicate)) +
-  geom_density(alpha = alp, adjust = bw) +
-  facet_grid(Dose~Timepoint) +
-  geom_vline(xintercept = 1) #+
-  ggtitle(paste(setnormdata$Exposure[1],
-                setnormdata$Cellline[1],
-                setnormdata$Antibody[1],
-                setnormdata$Cellcycle[1],
-                'Norm by set',
-                sep = ' ')) +
-  ggsave(filename = paste('figures/prelim',
-                          setnormdata$Exposure[1],
-                          setnormdata$Cellline[1],
-                          setnormdata$Antibody[1],
-                          setnormdata$Cellcycle[1],
-                          'Norm by set.pdf',
-                          sep = '_'),
-         width = 8.5, height = 5.5, units = "in")
-
-
-
-
-#
-#
-# # normalization by timepoint (mean of means of control sets)
-# norms2 <- merge(log_alldata[], ddply(log_alldata[which(log_alldata$Dose == '0Gy'),],
-#                                               .(Exposure, Timepoint, Cellline, Antibody, Cellcycle), summarize,
-#                                               mean = round(mean(FL), 3)))
-#
-#
-# setnormdata2 <- cbind(norms2[,1:7], FL = norms2$FL-norms2$mean+1)
-#
-# ggplot(setnormdata2[which(setnormdata2$Exposure == 'Fe1000'),], aes(FL, fill = Replicate)) +
-#   geom_density(alpha = alp, adjust = bw) +
-#   facet_grid(Dose~Timepoint) +
-#   geom_vline(xintercept = 1) +
-#   ggtitle(paste(setnormdata2$Exposure[1],
-#                 setnormdata2$Cellline[1],
-#                 setnormdata2$Antibody[1],
-#                 setnormdata2$Cellcycle[1],
-#                 'Norm by mean of sets',
-#                 sep = ' '))
-#
-#
-#
-#
-#
-#
-
-
-stats_data <- setstats[which(setstats$Timepoint == unique(timepoint)[2] &
-                                setstats$Antibody == unique(antibody)[1]),]
-
-
-boxplot(gmean ~ Dose:Exposure, data = stats_data)
-
-
-fit <- aov(gmean ~ Dose+Exposure, data = stats_data)
-summary(fit)
-
-summary(glht(fit, linfct=mcp(Dose="Tukey", Exposure="Tukey")))
-
-fit <- aov(mean ~ (Dose*Timepoint*Antibody)+(Exposure+Cellline), data = setstats)
-summary(fit)
-
-print(model.tables(fit,"means"),digits=3)
-
-summary(glht(fit, linfct=mcp(Dose="Tukey")))
-
-
+# generate p-values for comparisons of dose, exposure, and cellline
 
 sig_threshold = 0.05
 sig_results <- array(dim = c(200,6))
@@ -481,12 +405,12 @@ for (i in seq(length(unique(exposure)))){
   for (j in seq(length(unique(cellline)))){
     for (k in seq(length(unique(antibody)))){
       for (l in seq(length(unique(timepoint))-1)){
-        stats_data <- setstats[which(setstats$Timepoint == unique(timepoint)[l] &
-                                       setstats$Antibody == unique(antibody)[k] &
-                                       setstats$Cellline == unique(cellline)[j] &
-                                       setstats$Exposure == unique(exposure)[i]),]
+        stats_data <- dplyr::filter(setstats, Timepoint == unique(timepoint)[l] &
+                                      Antibody == unique(antibody)[k] &
+                                      Cellline == unique(cellline)[j] &
+                                      Exposure == unique(exposure)[i])
         if (nrow(stats_data) > 5){
-          fit <- aov(gmean ~ Dose, data = stats_data)
+          fit <- aov(median ~ Dose, data = stats_data)
           anova_results <- summary(glht(fit, linfct=mcp(Dose="Dunnett")))
 
           for (n in which(anova_results$test$pvalues < sig_threshold)){
@@ -505,22 +429,22 @@ for (i in seq(length(unique(exposure)))){
 }
 
 sig_results <- sig_results[-min(which(is.na(sig_results))):-nrow(sig_results),]
-write.csv(sig_results, file = "sig_tables/Dose.csv")
+write.csv(sig_results, file = "tables/pvals_Dose.csv")
 
 
 sig_results <- array(dim = c(200,6))
 colnames(sig_results) <- c('Timepoint','Antibody','Cellline','Exposure','Dose','P-value')
 
-for (i in seq(length(unique(dose)))){
+for (i in seq(length(unique(dose))-2)+1){
   for (j in seq(length(unique(cellline)))){
     for (k in seq(length(unique(antibody)))){
       for (l in seq(length(unique(timepoint))-1)){
-        stats_data <- setstats[which(setstats$Timepoint == unique(timepoint)[l] &
-                                       setstats$Antibody == unique(antibody)[k] &
-                                       setstats$Cellline == unique(cellline)[j] &
-                                       setstats$Dose == unique(dose)[i]),]
+        stats_data <- dplyr::filter(setstats, Timepoint == unique(timepoint)[l] &
+                                      Antibody == unique(antibody)[k] &
+                                      Cellline == unique(cellline)[j] &
+                                      Dose == unique(dose)[i])
         if (nrow(stats_data) > 5){
-          fit <- aov(gmean ~ Exposure, data = stats_data)
+          fit <- aov(median ~ Exposure, data = stats_data)
           anova_results <- summary(glht(fit, linfct=mcp(Exposure="Tukey")))
 
           for (n in which(anova_results$test$pvalues < sig_threshold)){
@@ -539,22 +463,23 @@ for (i in seq(length(unique(dose)))){
 }
 
 sig_results <- sig_results[-min(which(is.na(sig_results))):-nrow(sig_results),]
-write.csv(sig_results, file = "sig_tables/Exposure.csv")
+write.csv(sig_results, file = "tables/pvals_Exposure.csv")
 
 
 sig_results <- array(dim = c(200,6))
 colnames(sig_results) <- c('Timepoint','Antibody','Cellline','Exposure','Dose','P-value')
 
-for (i in seq(length(unique(dose)))){
+for (i in seq(length(unique(dose))-2)+1){
   for (j in seq(length(unique(exposure)))){
     for (k in seq(length(unique(antibody)))){
       for (l in seq(length(unique(timepoint))-1)){
-        stats_data <- setstats[which(setstats$Timepoint == unique(timepoint)[l] &
-                                       setstats$Antibody == unique(antibody)[k] &
-                                       setstats$Exposure == unique(exposure)[j] &
-                                       setstats$Dose == unique(dose)[i]),]
-        if (nrow(stats_data) > 10){
-          fit <- aov(gmean ~ Cellline, data = stats_data)
+        stats_data <- dplyr::filter(setstats, Timepoint == unique(timepoint)[l] &
+                                      Antibody == unique(antibody)[k] &
+                                      Exposure == unique(exposure)[j] &
+                                      Dose == unique(dose)[i])
+
+        if (nrow(stats_data) > 3){
+          fit <- aov(median ~ Cellline, data = stats_data)
           anova_results <- summary(glht(fit, linfct=mcp(Cellline="Dunnett")))
 
           for (n in which(anova_results$test$pvalues < sig_threshold)){
@@ -573,38 +498,145 @@ for (i in seq(length(unique(dose)))){
 }
 
 sig_results <- sig_results[-min(which(is.na(sig_results))):-nrow(sig_results),]
-write.csv(sig_results, file = "sig_tables/Cellline.csv")
+write.csv(sig_results, file = "tables/pvals_Cellline.csv")
+
+
+# p-value generation for telo using Mann-Whitney in Coin
+
+
+sig_results <- array(dim = c(200,4))
+colnames(sig_results) <- c('Cellline','Exposure','Dose','P-value')
+
+for (i in unique(exposure)){
+  for (j in unique(cellline)){
+    stats_data <- dplyr::filter(telo_stats, Exposure == i &
+                                  Cellline == j)
+
+    for (k in seq(length(unique(stats_data$Dose))-1)){
+      for (l in seq(k+1,length(unique(stats_data$Dose)))){
+        mw <- wilcox_test(data = dplyr::filter(stats_data, Dose == unique(stats_data$Dose)[k] |
+                                                 Dose == unique(stats_data$Dose)[l]),
+                          median ~ Dose)
+        if (pvalue(mw) < sig_threshold){
+          m <- min(which(is.na(sig_results)))
+          sig_results[m,1] <- j
+          sig_results[m,2] <- i
+          sig_results[m,3] <- paste(unique(stats_data$Dose)[k],unique(stats_data$Dose)[l], sep = '-')
+          sig_results[m,4] <- round(pvalue(mw), 4)
+        }
+      }
+    }
+  }
+}
+
+sig_results <- sig_results[-min(which(is.na(sig_results))):-nrow(sig_results),]
+write.csv(sig_results, file = "tables/teloMW_pvals_Dose.csv")
 
 
 
+sig_results <- array(dim = c(200,4))
+colnames(sig_results) <- c('Cellline','Exposure','Dose','P-value')
+
+for (i in unique(dose)[c(2:4,6)]){
+  for (j in unique(cellline)){
+    stats_data <- dplyr::filter(telo_stats, Dose == i &
+                                  Cellline == j)
+
+    for (k in seq(length(unique(stats_data$Exposure))-1)){
+      for (l in seq(k+1,length(unique(stats_data$Exposure)))){
+        mw <- wilcox_test(data = dplyr::filter(stats_data, Exposure == unique(stats_data$Exposure)[k] |
+                                                 Exposure == unique(stats_data$Exposure)[l]),
+                          median ~ Exposure)
+        if (pvalue(mw) < sig_threshold){
+          m <- min(which(is.na(sig_results)))
+          sig_results[m,1] <- j
+          sig_results[m,3] <- i
+          sig_results[m,2] <- paste(unique(stats_data$Exposure)[k],unique(stats_data$Exposure)[l], sep = '-')
+          sig_results[m,4] <- round(pvalue(mw), 4)
+        }
+      }
+    }
+  }
+}
+
+sig_results <- sig_results[-min(which(is.na(sig_results))):-nrow(sig_results),]
+write.csv(sig_results, file = "tables/teloMW_pvals_Exposure.csv")
+
+
+
+sig_results <- array(dim = c(200,4))
+colnames(sig_results) <- c('Cellline','Exposure','Dose','P-value')
+
+for (i in unique(dose)[c(2:4,6)]){
+  for (j in unique(exposure)){
+    stats_data <- dplyr::filter(telo_stats, Dose == i &
+                                  Exposure == j)
+    mw <- wilcox_test(data = stats_data, median ~ Cellline)
+    if (pvalue(mw) < sig_threshold){
+      m <- min(which(is.na(sig_results)))
+      sig_results[m,2] <- j
+      sig_results[m,3] <- i
+      sig_results[m,1] <- paste(unique(stats_data$Cellline)[1],unique(stats_data$Cellline)[2], sep = '-')
+      sig_results[m,4] <- round(pvalue(mw), 4)
+    }
+  }
+}
+
+sig_results <- sig_results[-min(which(is.na(sig_results))):-nrow(sig_results),]
+write.csv(sig_results, file = "tables/teloMW_pvals_Cellline.csv")
+
+
+# make a table of coeffecients at p-values for linear model fitting
+fit_results <- ldply(fits, coef)
+colnames(fit_results) <- c(colnames(fit_results)[1:3],'Intercept','Slope')
+getrp <- function(fitlist) round(c(summary(fitlist)$adj.r.squared, summary(fitlist)$coefficients[,4]), 4)
+ldply(fits, getrp)
+fit_results <- cbind(fit_results, ldply(fits, getrp)[4:6])
+colnames(fit_results) <- c(colnames(fit_results)[1:3],'Intercept','Slope','Adj_R_squared','Intercept_Pvalue','Slope_Pvalue')
+write.csv(fit_results, file = 'tables/linear_regression_results.csv')
+
+
+# recenter all telo distributions and do a two-sample K-S test
+alfun <- function(x) x - median(x)
+telo_aligned <- ddply(telo_data, .(Exposure, Timepoint, Cellline, Antibody, Replicate, Dose),
+                      mutate, aFL = FL - median(FL))
+telo_aligned_stats <- ddply(telo_aligned, .(Exposure, Cellline, Replicate, Dose),
+                            summarize, Q1 = quantile(aFL)[2], Q3 = quantile(aFL)[4])
+
+telo_aligned_summary <- ddply(telo_aligned_stats, .(Exposure, Cellline, Dose),
+                              summarize,
+                              mQ1 = mean(Q1),
+                              sdQ1 = sd(Q1),
+                              mQ3 = mean(Q3),
+                              sdQ3 = sd(Q3))
+
+
+ggplot(telo_aligned, aes(x = aFL)) +
+  geom_density(aes(fill = Replicate), alpha = alp, adjust = bw) +
+  facet_grid(Dose~Exposure)
+
+
+
+
+
+ggplot(telo_aligned_stats, aes(x = -Q1, y = Q3)) +
+  geom_point(aes(color = Cellline, shape = Replicate)) +
+  facet_grid(Dose~Exposure) +
+  geom_abline(slope = 1, intercept = 0)
+
+ggplot(telo_aligned_summary, aes(x = -mQ1, y = mQ3)) +
+  geom_point(aes(color = Cellline), size = 3) +
+  geom_errorbar(aes(ymin = mQ3 - sdQ3, ymax = mQ3 + sdQ3)) +
+  geom_errorbarh(aes(xmin = -mQ1 - sdQ1, xmax = -mQ1 + sdQ1)) +
+  facet_grid(Dose~Exposure) +
+  geom_abline(slope = 1, intercept = 0)
+
+
+
+quantile(telo_aligned$aFL)
 
 
 # RE-LEVEL THE DOSE FACTOR
-telo_stats <- setstats[which(setstats$Antibody == 'Telo' &
-                               setstats$Exposure != 'Xray'),]
-
-# h24_data <- setstats[which(setstats$Timepoint == '24h'),]
-#
-# atf2_data <- setstats[which(setstats$Antibody == 'pATF2' &
-#                               setstats$Timepoint == '24h' &
-#                               setstats$Cellcycle == 'G1'),]
-# h2ax_data <- setstats[which(setstats$Antibody == 'H2aX' &
-#                               setstats$Timepoint == '24h' &
-#                               setstats$Cellcycle == 'G1'),]
-# smc_data <- setstats[which(setstats$Antibody == )]
-
-
-# telo_comp <- rbind(telo_data, h24_data)#, atf2_data, h2ax_data)
-#
-# telo_comp <- cbind(telo_comp, numDose = as.numeric(telo_comp$Dose))
-# telo_comp$numDose <- replace(x = as.numeric(telo_comp$numDose), list = which(telo_comp$numDose == 1), values = 0)
-# telo_comp$numDose <- replace(x = as.numeric(telo_comp$numDose), list = which(telo_comp$numDose == 2), values = 0.05)
-# telo_comp$numDose <- replace(x = as.numeric(telo_comp$numDose), list = which(telo_comp$numDose == 3), values = 0.5)
-# telo_comp$numDose <- replace(x = as.numeric(telo_comp$numDose), list = which(telo_comp$numDose == 4), values = 0.5)
-# telo_comp$numDose <- replace(x = as.numeric(telo_comp$numDose), list = which(telo_comp$numDose == 5), values = 2)
-# telo_comp$numDose <- replace(x = as.numeric(telo_comp$numDose), list = which(telo_comp$numDose == 6), values = 1)
-#
-
 #
 # telo_comp$Dose <- fct_relevel(telo_comp$Dose, "1Gy", after = 4)
 # telo_comp
@@ -659,26 +691,6 @@ telo_stats <- setstats[which(setstats$Antibody == 'Telo' &
 
 
 
-telo_data <- setnormdata[which(setnormdata$Antibody == 'Telo' &
-                                 setnormdata$Exposure != 'Xray'),]
-
-# ggplot(telo, aes(x = FL, fill = Dose)) +
-#   geom_density(alpha = alp, adjust = bw) +
-#   facet_grid(Exposure~Cellline)
-#
-# ggplot(telo, aes(x = FL)) +
-#   stat_ecdf(aes(color = Dose)) +
-#   facet_grid(Exposure~Cellline)
-#
-
-# telo_stats$Exposure <- factor(telo_stats$Exposure,
-#                                  levels = levels(telo_stats$Exposure)[c(1,6,2,4,5,3)])
-
-telo_summary <- ddply(telo_stats, .(Exposure, Dose, Cellline), summarize,
-                      mean = mean(median),
-                      sd = sd(median))
-
-
 # telo_plotting_data <- telo_data[which(telo_data$Exposure != 'Xray'),]
 
 
@@ -692,27 +704,39 @@ ggplot(telo_stats, aes(x = Exposure, y = median)) +
 
 
 
-pos <- position_dodge(width = 0.9)
-
-ggplot(telo_summary[which(telo_summary$Dose != '0Gy'),], aes(x = Dose,
-                       ymin = mean - sd,
-                       ymax = mean + sd,
-                       group = Exposure,
-                       fill = Exposure)) +
-  #geom_point(aes(shape = Cellline, stroke = 1), size = 2) +
-  geom_col(aes(y = mean, fill = Exposure), color = 'black', position = pos) +
-  geom_errorbar(position = pos) +
-  facet_grid(~Cellline) +
-  geom_hline(yintercept = 1)
-# BW THIS FIGURE
 
 
 
+ks_full_test <- dplyr::filter(telo_data, Dose == '1Gy' &
+                Cellline == '184D' &
+                Exposure == 'Si93')
+
+skew(ks_full_test$FL+1)
+
+ks <- ks.boot(ks_full_test$FL, telo_full_ref$FL, nboots = 500)
+
+summary(ks)
+
+cdfcomp(fitdist(ks_full_test$FL, 'norm'))
+denscomp(fitdist(ks_full_test$FL, 'norm'))
+ppcomp(fitdist(ks_full_test$FL, 'norm'))
+
+plotdist(ks_full_test$FL)
+descdist(ks_full_test$FL)
+
+qqnorm(ks_full_test$FL); qqline(ks_full_test$FL)
+qqcomp(fitdist(ks_full_test$FL, 'norm'))
+ppcomp(fitdist(ks_full_test$FL, 'norm'))
+
+plot(fitdist(ks_full_test$FL, 'norm'))
+
+skew(ks_full_test$FL, type = 3)
+
+describe(ks_full_test$FL)
 
 
-
-telo_full_ref <- dplyr::filter(telo, Dose == '0Gy')
-telo_full_ks <- ddply(telo, .(Exposure, Dose, Cellline), summarize,
+telo_full_ref <- dplyr::filter(telo_data, Dose == '0Gy' & Cellline == '184D')
+telo_full_ks <- ddply(telo_data, .(Exposure, Dose, Cellline), summarize,
                       ks = ks.test(FL, 'pnorm')$statistic,
                       ks2 = ks.test(FL, telo_full_ref$FL[which(telo_full_ref$Cellline == Cellline)])$statistic,
                       .progress = 'text')
@@ -781,16 +805,6 @@ ggplot(setnormdata[which(setnormdata$Antibody == 'Telo'),], aes(x = FL)) +
 
 
 
-summary_stats <- ddply(setstats, .(Exposure, Dose, Timepoint, Antibody, Cellline),
-                       summarize,
-                       mean = mean(mean),
-                       sd = sd(median),
-                       se = se(median),
-                       median = mean(median))
-                       #sd = sd(median))
-
-
-
 ggplot(summary_stats[which(summary_stats$Antibody == 'Telo'),],
        aes(x = Dose, y = mean)) +
   geom_col(aes(fill = Cellline), position = 'dodge') +
@@ -836,14 +850,6 @@ ggplot(setnormdata[which(setnormdata$Antibody == 'Telo'),],
   geom_vline(xintercept = 1) +
   ggtitle('Normalized Telo Data')
 
-# Telo box plot - is this columns?
-ggplot(setnormdata[which(setnormdata$Antibody == 'Telo'),],
-       aes(y = FL, x = Dose)) +
-  geom_boxplot(aes(fill = Dose)) +
-  facet_grid(Cellline~Exposure) +
-  geom_hline(yintercept = 1) +
-  ggtitle('Telo data by cell line + exposure')
-
 
 
 
@@ -862,7 +868,6 @@ ggplot(summary_stats[which(summary_stats$Antibody != 'Telo'),], aes(x = Dose,
   facet_grid(Timepoint~Antibody) +
   geom_hline(yintercept = 1)
 # BW THIS FIGURE
-
 
 
 pos <- position_dodge(width = 0.3)
